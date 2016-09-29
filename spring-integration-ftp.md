@@ -49,8 +49,8 @@ Class ``AbstractInboundFileSynchronizingMessageSource`` has two significant resp
 - configure ``fileSource`` with appropriate filters
 - orchestrate calls to ``synchronizer`` and ``fileSource``
 
-To make better customization we need to know details of how exaclty ``AbstractInboundFileSynchronizingMessageSource.receive()`` method works.
-What we can find in javadoc:
+To make better customization we need to know details of how exactly ``AbstractInboundFileSynchronizingMessageSource.receive()`` method works.
+What we can find in javadoc for this method:
 
 > Polls from the file source. If the result is not null, it will be returned.
 > If the result is null, it attempts to sync up with the remote directory to populate the file source.
@@ -74,8 +74,9 @@ The rest of details could be found in source files.
 
 ### Filters
 
-Ok, now we understand when and how files appear in our channel. Now let's talk what exactly is being processed.
-In case of FTP we have two sets of filters. There is a bunch of filters that could be used here. Let's look at the couple of them.
+Ok, now we understand when and how files appear in our channel. Now let's talk what exactly is being accepted and then passed to processing.
+In case of FTP we have **two independent filters**: filter for remote files and filter for local files.
+There is a bunch of filters that could be used here. Let's look at the couple of them.
 
 The root interface for all filters is ``FileListFilter`` with, again, only one method:
 
@@ -90,10 +91,27 @@ The root interface for all filters is ``FileListFilter`` with, again, only one m
 List<F> filterFiles(F[] files);
 ```
 
+Pretty simple - take an array and return filtered list.
+
+> Btw, it's kind interesting fact that it doesn't use List for both input and output.
+> After digging sources I still don't understand why :(
 
 Following diagram shows most interested filters: 
 
 ![Filter Hierarchy](https://www.lucidchart.com/publicSegments/view/8814916b-d80d-4c94-a5b7-4db9c82e457b/image.png)
+
+These are used when we need to store some information about accepted files *between* polls in order to apply "accept once" semantics.
+Interfaces ``ResettableFileListFilter`` and ``ReversibleFileListFilter`` contain methods used for removing information about files from store.
+
+Most dummy implementation of "accept once" filter is ``AcceptOnceFileListFilter``. It use standard java ``Set`` structure to keep information about accepted files.
+It also could be configured to keep only last N files in memory and after file falls out from queue it could be passed through this filter again.
+
+> **NOTE:** Documentation says that it could be used both for ``FileReadingMessageSource`` and ``FtpInboundFileSynchronizingMessageSource`` as most simple to configure filter. 
+> Unfortunately, it's not true due to implementation details. Filter stores accepted files in ``HashSet`` that is ok when you pass a class that implements ``hashCode()`` and ``equals()``.
+> That is true for standard ``File`` and not true for ``FTPFile`` that is used by FTP message source.
+
+Next implementation of "accepte once" is ``AbstractPersistentAcceptOnceFileListFilter`` that use ``ConcurrentMetadataStore`` for storing information about "seen" files.
+This is abstract class and has own extension for File, FTP and SFTP cases.
 
 Other filters that are worth to mention:
 
@@ -102,11 +120,9 @@ Other filters that are worth to mention:
 - ``SimplePatternFileListFilter`` - filters file list using Ant like patterns
 - ``LastModifiedFileListFilter`` - keeps files with lastmodified timestamp older than configured. One of the ways to filter files that are still being uploading.  
 - ``AcceptAllFileListFilter`` - simple one that keeps everything
+- ``HeadDirectoryScanner.HeadFilter`` - keeps only first N files from a list. **Note: should not be used in conjunction with an ``AcceptOnceFileListFilter`` or similar.**
+- ``NioFileLocker`` - locks file before processing by using java.nio capabilities. Works good only with local filesystem.
 
-
-
-
-> Note: problems in documentation
 
 
 ## To be: Filter description, some diagrams
