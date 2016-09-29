@@ -75,10 +75,33 @@ The rest of details could be found in source files.
 ### Filters
 
 Ok, now we understand when and how files appear in our channel. Now let's talk what exactly is being processed.
-In case of FTP we have two sets of filters. There is a bunch of filters that could be used here. Let's look through a couple of them.
+In case of FTP we have two sets of filters. There is a bunch of filters that could be used here. Let's look at the couple of them.
 
-*diagram with filters*
+The root interface for all filters is ``FileListFilter`` with, again, only one method:
 
+```java
+/**
+ * Filters out files and returns the files that are left in a list, or an
+ * empty list when a null is passed in.
+ *
+ * @param files The files.
+ * @return The filtered files.
+ */
+List<F> filterFiles(F[] files);
+```
+
+
+Following diagram shows most interested filters: 
+
+![Filter Hierarchy](https://www.lucidchart.com/publicSegments/view/8814916b-d80d-4c94-a5b7-4db9c82e457b/image.png)
+
+Other filters that are worth to mention:
+
+- ``IgnoreHiddenFileListFilter`` - filters all hidden files (e.g. file with name starting with dot in Linux) 
+- ``RegexPatternFileListFilter`` - filters file list using regexp
+- ``SimplePatternFileListFilter`` - filters file list using Ant like patterns
+- ``LastModifiedFileListFilter`` - keeps files with lastmodified timestamp older than configured. One of the ways to filter files that are still being uploading.  
+- ``AcceptAllFileListFilter`` - simple one that keeps everything
 
 
 
