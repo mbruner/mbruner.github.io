@@ -1,10 +1,6 @@
-# Spring Integration
+# Spring Integration - Add failover support to FTP inbound channel
 
-Add failover support to FTP inbound channel
-
-
-
-## Intro: Problem description
+## Problem description
 
 Imagine a situation when you have FTP server or SAN/NAS (mounted to local system) where all your clients put their's files and you import them into you database.
  Sounds easy, right? Actually, it becomes a hard pain when you have distributed environment and you'd like to make your import process reliable.
@@ -78,6 +74,10 @@ Ok, now we understand when and how files appear in our channel. Now let's talk w
 In case of FTP we have **two independent filters**: filter for remote files and filter for local files.
 There is a bunch of filters that could be used here. Let's look at the couple of them.
 
+Following diagram illustrates interactions between parties involved into polling process:
+
+![Sequence diagram](https://www.lucidchart.com/publicSegments/view/b8a47c59-8fe9-4ae6-9262-67e7b2d99eb1/image.png)
+
 The root interface for all filters is ``FileListFilter`` with, again, only one method:
 
 ```java
@@ -137,7 +137,6 @@ Other filters that are worth to mention:
 ## limitations:
 - file naming
 - rejected channel
-- 
 
 
 ##Sources: main parts of implementation + link to full code and demo--
