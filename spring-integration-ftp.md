@@ -76,7 +76,7 @@ There is a bunch of filters that could be used here. Let's look at the couple of
 
 Following diagram illustrates interactions between parties involved into polling process:
 
-![Sequence diagram](https://www.lucidchart.com/publicSegments/view/b8a47c59-8fe9-4ae6-9262-67e7b2d99eb1/image.png)
+![Sequence diagram](https://www.lucidchart.com/publicSegments/view/c7a64226-54f5-4ea3-a974-16b8802acaf1/image.png)
 
 The root interface for all filters is ``FileListFilter`` with, again, only one method:
 
