@@ -19,7 +19,7 @@ In our case we had geo distributed cluster, one FTP server, shared filesystem an
 
 ## As is: describe in short what do we have already implemented in spring
 
-Spring Integration has a lot of predefined channels adapters including [FTP/FTPS][si-ftp] and local [filesystem][si-files].
+Spring Integration has a lot of predefined channels adapters including [FTP/FTPS](si-ftp) and local [filesystem](si-files).
 But after some digging in documentation and sources we can find that it's not enough for our case and we must implement some stuff by ourselves.
 
 First let's look deeper into Spring Integration features.
@@ -52,13 +52,13 @@ What we can find in javadoc for this method:
 > If the result is null, it attempts to sync up with the remote directory to populate the file source.
 > Then, it polls the file source again and returns the result, whether or not it is null.
 
-It means that each time we call ``recieve()`` it will do:
+It means that each time we call ``receive()`` it will do:
 
 1. it tries to poll local directory for files (using ``fileSource``)
 2. then if there is nothing in local directory it will try to synchronize remote folder with local one and poll it again
 
-How often method ``recieve()`` is called depends on poller configuration (either it is global poller or a specific one for this channel).
-Following example shows configuration when each 5sec method ``recieve()`` will be called twice:
+How often method ``receive()`` is called depends on poller configuration (either it is global poller or a specific one for this channel).
+Following example shows configuration when each 5sec method ``receive()`` will be called twice:
 
 ```xml
 <int-ftp:inbound-channel-adapter id="ftpInbound" ...>
@@ -110,9 +110,20 @@ It also could be configured to keep only last N files in memory and after file f
 > Unfortunately, it's not true due to implementation details. Filter stores accepted files in ``HashSet`` that is ok when you pass a class that implements ``hashCode()`` and ``equals()``.
 > That is true for standard ``File`` and not true for ``FTPFile`` that is used by FTP message source.
 
-Next implementation of "accepte once" is ``AbstractPersistentAcceptOnceFileListFilter`` that use ``ConcurrentMetadataStore`` for storing information about "seen" files.
+Next implementation of "accept once" is ``AbstractPersistentAcceptOnceFileListFilter`` that use ``ConcurrentMetadataStore`` for storing information about "seen" files.
 This is abstract class and has own extension for File, FTP and SFTP cases.
 
+[Documentation]() says about metadata store:
+
+> The Metadata Store is designed to store various types of generic meta-data (e.g., published date of the last feed entry that has been processed) to help components such as the Feed adapter deal with duplicates.
+
+Filter stores in a store information about accepted files in following format:
+"file name" -> "last modified timestamp"
+
+Timestamp is used for cases when we update file and it is passed to processing again.
+
+Some failover capabilities are added to ``AbstractPersistentAcceptOnceFileListFilter`` filter. In case of any failure during synchronization (downloading) ``AbstractInboundFileSynchronizingMessageSource`` calls ``rollback()`` method that removes entries about files from metadata store.
+ 
 Other filters that are worth to mention:
 
 - ``IgnoreHiddenFileListFilter`` - filters all hidden files (e.g. file with name starting with dot in Linux) 
@@ -123,14 +134,108 @@ Other filters that are worth to mention:
 - ``HeadDirectoryScanner.HeadFilter`` - keeps only first N files from a list. **Note: should not be used in conjunction with an ``AcceptOnceFileListFilter`` or similar.**
 - ``NioFileLocker`` - locks file before processing by using java.nio capabilities. Works good only with local filesystem.
 
+## Why it is not enough?
 
+There are lot of stuff already implemented in Spring Integration, though we can use it for rollback only when error happens in code but there is nothing for handling JVM crashes: files are marked as accepted *before* any processing starts. Also default implementations accept *all* files just after we get a list from FTP or Local file system - it makes concurrent processing almost impossible.
 
-## To be: Filter description, some diagrams
+## Extending standard filters
+
+We decided to implement our own filter that will not just accept files but also mark processing as completed once it is over (with configured retry timeout). Also we added ability to limit number of files to accept.
 
 ![State Diagram](https://www.lucidchart.com/publicSegments/view/c250b2de-9d91-4228-8267-448c106cf7c9/image.png)
 
+We store more information in metadata store then we need to serialize and deserialize some structure (e.g. JSON as in example):
+```
+ftpLocalAcceptOnceRetriableFilter-c.txt" ->"{\"status\":1,\"tries\":1,\"lastTryTimestamp\":1474975591}"
+```
 
-## Demo
+Implementation of ``accept(F file)`` method is trivial:
+```
+protected boolean accept(F file) {
+    String key = buildKey(file);
+    synchronized (monitor) {
+        long currentTimestamp = Instant.now().getEpochSecond();
+
+        FileAcceptStatus status = new FileAcceptStatus();
+        status.setLastTryTimestamp(currentTimestamp);
+        status.setTries(1);
+
+        String newValue = StatusSerializer.toString(status);
+        String oldValue = store.putIfAbsent(key, newValue); // try happy path
+
+        if (oldValue != null) {
+            do {
+                oldValue = store.get(key);
+                status = StatusSerializer.fromString(oldValue);
+
+                if (status.getStatus() == FileAcceptStatus.DONE) {
+                    return false;
+                } else if ((currentTimestamp - status.getLastTryTimestamp()) < retryTimeoutSeconds) {
+                    return false;
+                }
+
+                if (status.getTries() >= maxTry) {
+                    status.setStatus(FileAcceptStatus.REJECTED);
+                } else {
+                    status.setLastTryTimestamp(currentTimestamp);
+                    status.setTries(status.getTries() + 1);
+                }
+
+                newValue = StatusSerializer.toString(status);
+            } while (!store.replace(key, oldValue, newValue));
+        }
+
+        return status.getStatus() == FileAcceptStatus.IN_PROGRESS;
+    }
+}
+```
+And ``commit(F f)``:
+```
+public void commit(F file) {
+    String key = buildKey(file);
+    synchronized (monitor) {
+        String oldValue;
+        String newValue;
+
+        do {
+            oldValue = store.get(key);
+            FileAcceptStatus status;
+
+            if (oldValue != null) {
+                status = StatusSerializer.fromString(oldValue);
+
+                if (status.getStatus() == FileAcceptStatus.DONE) {
+                    /*
+                     * another process finished processing before our process - this should be reported
+                     * with high severity and timeout value must be increased
+                     */
+                    return;
+                }
+            } else {
+                // very strange situation when file was processed without creating record in metadata store
+                status = new FileAcceptStatus();
+            }
+
+            status.setStatus(FileAcceptStatus.DONE);
+            newValue = StatusSerializer.toString(status);
+        } while (!store.replace(key, oldValue, newValue));
+    }
+}
+```
+
+Configuration of this filter looks like:
+```
+<bean name="ftpLocalAcceptOnceRetriableFilter" class="com.epam.cc.java.ftp.prototype.FilePersistentAcceptOnceRetriableFileListFilter">
+    <constructor-arg ref="metadataStore"/>
+    <constructor-arg value="ftpLocalAcceptOnceRetriableFilter-"/>
+    <property name="retryTimeoutSeconds" value="60"/>
+    <property name="maxAcceptedFileListLength" value="5"/>
+</bean>
+```
+
+
+
+## Demo Application
 
 
 
@@ -139,19 +244,6 @@ Other filters that are worth to mention:
 - rejected channel
 
 
-##Sources: main parts of implementation + link to full code and demo--
-
-
 [si-ftp](http://docs.spring.io/spring-integration/reference/html/ftp.html)
 [si-files](http://docs.spring.io/spring-integration/reference/html/files.html)
-
-
-
-
-
-
-
-
-
-
-
+[si-ms](http://docs.spring.io/spring-integration/reference/html/system-management-chapter.html#metadata-store)
