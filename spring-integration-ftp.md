@@ -118,7 +118,9 @@ This is abstract class and has own extension for File, FTP and SFTP cases.
 > The Metadata Store is designed to store various types of generic meta-data (e.g., published date of the last feed entry that has been processed) to help components such as the Feed adapter deal with duplicates.
 
 Filter stores in a store information about accepted files in following format:
+```
 "file name" -> "last modified timestamp"
+```
 
 Timestamp is used for cases when we update file and it is passed to processing again.
 
@@ -146,11 +148,11 @@ We decided to implement our own filter that will not just accept files but also 
 
 We store more information in metadata store then we need to serialize and deserialize some structure (e.g. JSON as in example):
 ```
-ftpLocalAcceptOnceRetriableFilter-c.txt" ->"{\"status\":1,\"tries\":1,\"lastTryTimestamp\":1474975591}"
+"ftpLocalAcceptOnceRetriableFilter-c.txt" ->"{\"status\":1,\"tries\":1,\"lastTryTimestamp\":1474975591}"
 ```
 
 Implementation of ``accept(F file)`` method is trivial:
-```
+```javaп
 protected boolean accept(F file) {
     String key = buildKey(file);
     synchronized (monitor) {
@@ -190,7 +192,7 @@ protected boolean accept(F file) {
 }
 ```
 And ``commit(F f)``:
-```
+```java
 public void commit(F file) {
     String key = buildKey(file);
     synchronized (monitor) {
@@ -224,7 +226,7 @@ public void commit(F file) {
 ```
 
 Configuration of this filter looks like:
-```
+```xml
 <bean name="ftpLocalAcceptOnceRetriableFilter" class="com.epam.cc.java.ftp.prototype.FilePersistentAcceptOnceRetriableFileListFilter">
     <constructor-arg ref="metadataStore"/>
     <constructor-arg value="ftpLocalAcceptOnceRetriableFilter-"/>
@@ -233,6 +235,21 @@ Configuration of this filter looks like:
 </bean>
 ```
 
+We have configured our filter and it will store data about accepted files. Now we need to configure call to ``commit`` method. Spring documentation offers so called ``transaction-synchronization-factory`` component that might be configured with three callbacks ``beforeCommit``, ``afterCommit`` and ``afterRollback``. It's a kind of confusing but we will configure it to call ``commit`` method in both ``afterCommit`` and ``afterRollback`` callbacks - this is because software errors must be handled in another way - we just ensure that file was processed nevertheless processing was successful or not.
+
+```xml
+<int-ftp:inbound-channel-adapter id="ftpInbound" ...>
+        <int:poller fixed-rate="5000" max-messages-per-poll="2" task-executor="executor">
+            <int:transactional synchronization-factory="syncFactory" />
+        </int:poller>
+    </int-ftp:inbound-channel-adapter>
+
+    <int:transaction-synchronization-factory id="syncFactory">
+        <int:after-commit expression="@ftpLocalAcceptOnceRetriableFilter.commit(payload)"  />
+        <int:after-rollback expression="@ftpLocalAcceptOnceRetriableFilter.commit(payload)"  />
+    </int:transaction-synchronization-factory>
+```
+**Note:** we also must have transaction manager configured. It could be either ``PseudoTransactionManager`` or any other.
 
 
 ## Demo Application
