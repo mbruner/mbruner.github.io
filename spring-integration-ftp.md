@@ -316,6 +316,7 @@ Sample project has simple integration flow: we download files from FTP, process 
 ![Demo flow](https://www.lucidchart.com/publicSegments/view/3ed3db2b-4b9e-4d84-8e9d-5293318c1972/image.png)
 
 There two examples of configuration:
+
 1. spring-integration.xml - plain XML configuration without extended synchronizer.
 2. spring-integration-beans.xml and FtpChannelConfig - mixed XML and Java configuration with extended synchronizer.
 
@@ -323,6 +324,107 @@ We configure processing to run in parallel by setting executor property of a pol
 To support Tx boundaries we use ``DirectChannel`` to ensure that all flow happens within single thread.
 
 To run demo you must configure redis and FTP server.
+We have a bunch of files on FTP server and we would like to process it by two instances using 2 threads in each one:
+
+Instance 1:
+```
+2016-10-10 18:50:38 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/a.txt
+2016-10-10 18:50:38 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/b.txt
+2016-10-10 18:50:38 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/a.txt, headers={id=0951ff07-086c-409f-4233-142e92072a99, timestamp=1476114638763}]]
+2016-10-10 18:50:38 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: a.txt
+2016-10-10 18:50:38 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 10% done
+2016-10-10 18:50:39 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 20% done
+2016-10-10 18:50:40 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 30% done
+2016-10-10 18:50:41 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 40% done
+2016-10-10 18:50:42 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 50% done
+2016-10-10 18:50:43 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/b.txt, headers={id=f98b2ec6-9584-da86-f113-328b9cb7ffeb, timestamp=1476114643222}]]
+2016-10-10 18:50:43 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: b.txt
+2016-10-10 18:50:43 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 10% done
+2016-10-10 18:50:43 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 60% done
+2016-10-10 18:50:44 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 20% done
+2016-10-10 18:50:44 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 70% done
+2016-10-10 18:50:45 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 30% done
+2016-10-10 18:50:45 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 80% done
+2016-10-10 18:50:46 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 40% done
+2016-10-10 18:50:46 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 90% done
+2016-10-10 18:50:47 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 50% done
+2016-10-10 18:50:47 c.e.c.j.f.p.demo.DelayedProcessor        : a.txt: 100% done
+2016-10-10 18:50:48 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 60% done
+2016-10-10 18:50:48 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/e.txt
+2016-10-10 18:50:48 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/f.txt
+2016-10-10 18:50:48 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/e.txt, headers={id=8aa25d62-27c5-0137-c97c-d4e5ba4b05bb, timestamp=1476114648921}]]
+2016-10-10 18:50:48 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: e.txt
+2016-10-10 18:50:48 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 10% done
+2016-10-10 18:50:49 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 70% done
+2016-10-10 18:50:49 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 20% done
+2016-10-10 18:50:50 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 80% done
+2016-10-10 18:50:50 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 30% done
+2016-10-10 18:50:51 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 90% done
+2016-10-10 18:50:51 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 40% done
+2016-10-10 18:50:52 c.e.c.j.f.p.demo.DelayedProcessor        : b.txt: 100% done
+2016-10-10 18:50:52 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 50% done
+2016-10-10 18:50:53 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/f.txt, headers={id=dde2e385-3a06-8197-3dfa-4c5cc6f8f46a, timestamp=1476114653271}]]
+2016-10-10 18:50:53 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: f.txt
+2016-10-10 18:50:53 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 10% done
+2016-10-10 18:50:53 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 60% done
+2016-10-10 18:50:54 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 20% done
+2016-10-10 18:50:54 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 70% done
+2016-10-10 18:50:55 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 30% done
+2016-10-10 18:50:55 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 80% done
+2016-10-10 18:50:56 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 40% done
+2016-10-10 18:50:56 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 90% done
+2016-10-10 18:50:57 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 50% done
+2016-10-10 18:50:57 c.e.c.j.f.p.demo.DelayedProcessor        : e.txt: 100% done
+2016-10-10 18:50:58 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 60% done
+2016-10-10 18:50:59 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 70% done
+2016-10-10 18:51:00 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 80% done
+2016-10-10 18:51:01 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 90% done
+2016-10-10 18:51:02 c.e.c.j.f.p.demo.DelayedProcessor        : f.txt: 100% done
+```
+
+Instance 2:
+```
+2016-10-10 18:50:39 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/c.txt
+2016-10-10 18:50:39 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/d.txt
+2016-10-10 18:50:39 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/c.txt, headers={id=f1904b2f-1215-f620-172c-217863f28ffb, timestamp=1476114639900}]]
+2016-10-10 18:50:39 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: c.txt
+2016-10-10 18:50:39 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 10% done
+2016-10-10 18:50:40 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 20% done
+2016-10-10 18:50:41 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 30% done
+2016-10-10 18:50:42 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 40% done
+2016-10-10 18:50:43 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 50% done
+2016-10-10 18:50:44 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/d.txt, headers={id=04ce980e-249e-d671-7f16-d08e464fa3a9, timestamp=1476114644380}]]
+2016-10-10 18:50:44 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: d.txt
+2016-10-10 18:50:44 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 10% done
+2016-10-10 18:50:44 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 60% done
+2016-10-10 18:50:45 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 20% done
+2016-10-10 18:50:45 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 70% done
+2016-10-10 18:50:46 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 30% done
+2016-10-10 18:50:46 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 80% done
+2016-10-10 18:50:47 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 40% done
+2016-10-10 18:50:47 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 90% done
+2016-10-10 18:50:48 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 50% done
+2016-10-10 18:50:48 c.e.c.j.f.p.demo.DelayedProcessor        : c.txt: 100% done
+2016-10-10 18:50:49 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 60% done
+2016-10-10 18:50:50 o.s.integration.ftp.session.FtpSession   : File has been successfully transferred from: /in/g.txt
+2016-10-10 18:50:50 o.s.i.file.FileReadingMessageSource      : Created message: [GenericMessage [payload=./build/tmp/ftpInbound/g.txt, headers={id=9db599f6-3a44-389d-2b34-debf14dcaea6, timestamp=1476114650032}]]
+2016-10-10 18:50:50 c.e.c.j.f.p.demo.DelayedProcessor        : Starting processing file: g.txt
+2016-10-10 18:50:50 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 10% done
+2016-10-10 18:50:50 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 70% done
+2016-10-10 18:50:51 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 20% done
+2016-10-10 18:50:51 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 80% done
+2016-10-10 18:50:52 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 30% done
+2016-10-10 18:50:52 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 90% done
+2016-10-10 18:50:53 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 40% done
+2016-10-10 18:50:53 c.e.c.j.f.p.demo.DelayedProcessor        : d.txt: 100% done
+2016-10-10 18:50:54 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 50% done
+2016-10-10 18:50:55 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 60% done
+2016-10-10 18:50:56 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 70% done
+2016-10-10 18:50:57 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 80% done
+2016-10-10 18:50:58 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 90% done
+2016-10-10 18:50:59 c.e.c.j.f.p.demo.DelayedProcessor        : g.txt: 100% done
+```
+So we see that files are downloaded and processed in parallel way.
 
 ## Next steps
 
