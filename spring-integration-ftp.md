@@ -1,9 +1,11 @@
 # Spring Integration - Add failover support to FTP inbound channel
 
+All sources could be found in my repo: https://github.com/mbruner/spring-integration-ftp-failover
+
 ## Problem description
 
 Imagine a situation when you have FTP server or SAN/NAS (mounted to local system) where all your clients put their's files and you import them into you database.
- Sounds easy, right? Actually, it becomes a hard pain when you have distributed environment and you'd like to make your import process reliable.
+Sounds easy, right? Actually, it becomes a hard pain when you have distributed environment and you'd like to make your import process reliable.
 
 Situation that should be kept in mind while designing your solution:
 
@@ -14,7 +16,6 @@ Situation that should be kept in mind while designing your solution:
 
 In our case we had geo distributed cluster, one FTP server, shared filesystem and requirements listed above.
 ![Our deployment schema](https://www.lucidchart.com/publicSegments/view/d9713ffd-0b6f-438e-ac88-4e1bb55a25be/image.png)
-
 
 
 ## As is: describe in short what do we have already implemented in spring
@@ -290,8 +291,8 @@ And it becomes interesting when you need to configure it :)
         FtpExtendedInboundFileSynchronizer fileSynchronizer = new FtpExtendedInboundFileSynchronizer(ftpSessionFactory());
         fileSynchronizer.setDeleteRemoteFiles(deleteRemoteFiles);
         fileSynchronizer.setRemoteDirectory(remoteDirectory);
-        **fileSynchronizer.setFilter(ftpRemoteCompositeFilter());**
-        **fileSynchronizer.setCommitableFilter(ftpPersistentFilter());**
+        fileSynchronizer.setFilter(ftpRemoteCompositeFilter());
+        fileSynchronizer.setCommitableFilter(ftpPersistentFilter());
         return fileSynchronizer;
     }
 
@@ -309,18 +310,25 @@ And it becomes interesting when you need to configure it :)
 You can't use DSL and configuration via XML won't be trivial as well.
 
 ## Demo Application
+
 Sample project has simple integration flow: we download files from FTP, process them (fixed 10s for each) and then move files to directory with processed files:
 
 ![Demo flow](https://www.lucidchart.com/publicSegments/view/3ed3db2b-4b9e-4d84-8e9d-5293318c1972/image.png)
 
+There two examples of configuration:
+1. spring-integration.xml - plain XML configuration without extended synchronizer.
+2. spring-integration-beans.xml and FtpChannelConfig - mixed XML and Java configuration with extended synchronizer.
+
 We configure processing to run in parallel by setting executor property of a poller.
 To support Tx boundaries we use ``DirectChannel`` to ensure that all flow happens within single thread.
 
+To run demo you must configure redis and FTP server.
+
 ## Next steps
 
-
-
-## limitations:
-- file naming
-- rejected channel
+Given implementations are just a baseline for a good implementation of reliable processing using Spring Integration. In most cases you would like to consider:
+- Send "REJECTED" files to a special channel: we can do it by injecting ``MessageChannel`` to remote/local filter
+- Do more comprehensive processing of failures
+- Manipulate files on FTP server
+- etc.
 
