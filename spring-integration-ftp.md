@@ -311,7 +311,7 @@ You can't use DSL and configuration via XML won't be trivial as well.
 ## Demo Application
 Sample project has simple integration flow: we download files from FTP, process them (fixed 10s for each) and then move files to directory with processed files:
 
-[Demo flow](https://www.lucidchart.com/publicSegments/view/f9b47b70-f747-4d5b-b618-ab43855a967c/image.png)
+![Demo flow](https://www.lucidchart.com/publicSegments/view/3ed3db2b-4b9e-4d84-8e9d-5293318c1972/image.png)
 
 We configure processing to run in parallel by setting executor property of a poller.
 To support Tx boundaries we use ``DirectChannel`` to ensure that all flow happens within single thread.
