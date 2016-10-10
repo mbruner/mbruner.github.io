@@ -152,7 +152,7 @@ We store more information in metadata store then we need to serialize and deseri
 ```
 
 Implementation of ``accept(F file)`` method is trivial:
-```javaп
+```java
 protected boolean accept(F file) {
     String key = buildKey(file);
     synchronized (monitor) {
