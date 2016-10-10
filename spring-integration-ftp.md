@@ -13,13 +13,13 @@ Situation that should be kept in mind while designing your solution:
 - mostly you will not want files be processed more than once or ignored - usually we need exactly once semantics (or at least with a certain degree of confidence)
 
 In our case we had geo distributed cluster, one FTP server, shared filesystem and requirements listed above.
-![Our deployment schema](https://www.lucidchart.com/publicSegments/view/bbd534be-f3ad-4711-a11c-e2e3e1204fae/image.png)
+![Our deployment schema](https://www.lucidchart.com/publicSegments/view/d9713ffd-0b6f-438e-ac88-4e1bb55a25be/image.png)
 
 
 
 ## As is: describe in short what do we have already implemented in spring
 
-Spring Integration has a lot of predefined channels adapters including [FTP/FTPS](si-ftp) and local [filesystem](si-files).
+Spring Integration has a lot of predefined channels adapters including [FTP/FTPS](http://docs.spring.io/spring-integration/reference/html/ftp.html) and local [filesystem](http://docs.spring.io/spring-integration/reference/html/files.html).
 But after some digging in documentation and sources we can find that it's not enough for our case and we must implement some stuff by ourselves.
 
 First let's look deeper into Spring Integration features.
@@ -38,7 +38,7 @@ Message<T> receive();
 
 And when you use ``<int-ftp:inbound-channel-adapter />`` you actually configure a bean of ``FtpInboundFileSynchronizingMessageSource`` class.
 
-![Spring FTP Message Source class diagram](https://www.lucidchart.com/publicSegments/view/8eb40b68-0bd6-4210-9fd1-f03aaf933138/image.png)
+![Spring FTP Message Source class diagram](https://www.lucidchart.com/publicSegments/view/da1455ee-6c98-4bd1-aec0-182c95d73d20/image.png)
 
 Class ``AbstractInboundFileSynchronizingMessageSource`` has two significant responsibilities:
 
@@ -76,7 +76,7 @@ There is a bunch of filters that could be used here. Let's look at the couple of
 
 Following diagram illustrates interactions between parties involved into polling process:
 
-![Sequence diagram](https://www.lucidchart.com/publicSegments/view/c7a64226-54f5-4ea3-a974-16b8802acaf1/image.png)
+![Sequence diagram](https://www.lucidchart.com/publicSegments/view/8f82a79c-1588-4cab-a9a0-291ca873bf69/image.png)
 
 The root interface for all filters is ``FileListFilter`` with, again, only one method:
 
@@ -98,7 +98,7 @@ Pretty simple - take an array and return filtered list.
 
 Following diagram shows most interested filters: 
 
-![Filter Hierarchy](https://www.lucidchart.com/publicSegments/view/8814916b-d80d-4c94-a5b7-4db9c82e457b/image.png)
+![Filter Hierarchy](https://www.lucidchart.com/publicSegments/view/d6a0ecf2-604f-418f-b55d-4b453f8fda53/image.png)
 
 These are used when we need to store some information about accepted files *between* polls in order to apply "accept once" semantics.
 Interfaces ``ResettableFileListFilter`` and ``ReversibleFileListFilter`` contain methods used for removing information about files from store.
@@ -113,7 +113,7 @@ It also could be configured to keep only last N files in memory and after file f
 Next implementation of "accept once" is ``AbstractPersistentAcceptOnceFileListFilter`` that use ``ConcurrentMetadataStore`` for storing information about "seen" files.
 This is abstract class and has own extension for File, FTP and SFTP cases.
 
-[Documentation]() says about metadata store:
+[Documentation](http://docs.spring.io/spring-integration/reference/html/system-management-chapter.html#metadata-store) says about metadata store:
 
 > The Metadata Store is designed to store various types of generic meta-data (e.g., published date of the last feed entry that has been processed) to help components such as the Feed adapter deal with duplicates.
 
@@ -144,7 +144,7 @@ There are lot of stuff already implemented in Spring Integration, though we can 
 
 We decided to implement our own filter that will not just accept files but also mark processing as completed once it is over (with configured retry timeout). Also we added ability to limit number of files to accept.
 
-![State Diagram](https://www.lucidchart.com/publicSegments/view/c250b2de-9d91-4228-8267-448c106cf7c9/image.png)
+![State Diagram](https://www.lucidchart.com/publicSegments/view/dc269ce7-c439-443c-a24a-95621b01f118/image.png)
 
 We store more information in metadata store then we need to serialize and deserialize some structure (e.g. JSON as in example):
 ```
@@ -153,6 +153,7 @@ We store more information in metadata store then we need to serialize and deseri
 
 Implementation of ``accept(F file)`` method is trivial:
 ```java
+@Override
 protected boolean accept(F file) {
     String key = buildKey(file);
     synchronized (monitor) {
@@ -193,6 +194,7 @@ protected boolean accept(F file) {
 ```
 And ``commit(F f)``:
 ```java
+@Override
 public void commit(F file) {
     String key = buildKey(file);
     synchronized (monitor) {
@@ -239,20 +241,82 @@ We have configured our filter and it will store data about accepted files. Now w
 
 ```xml
 <int-ftp:inbound-channel-adapter id="ftpInbound" ...>
-        <int:poller fixed-rate="5000" max-messages-per-poll="2" task-executor="executor">
-            <int:transactional synchronization-factory="syncFactory" />
-        </int:poller>
-    </int-ftp:inbound-channel-adapter>
+    <int:poller fixed-rate="5000" max-messages-per-poll="2" task-executor="executor">
+        <int:transactional synchronization-factory="syncFactory" />
+    </int:poller>
+</int-ftp:inbound-channel-adapter>
 
-    <int:transaction-synchronization-factory id="syncFactory">
-        <int:after-commit expression="@ftpLocalAcceptOnceRetriableFilter.commit(payload)"  />
-        <int:after-rollback expression="@ftpLocalAcceptOnceRetriableFilter.commit(payload)"  />
-    </int:transaction-synchronization-factory>
+<int:transaction-synchronization-factory id="syncFactory">
+    <int:after-commit expression="@ftpLocalAcceptOnceRetriableFilter.commit(payload)"  />
+    <int:after-rollback expression="@ftpLocalAcceptOnceRetriableFilter.commit(payload)"  />
+</int:transaction-synchronization-factory>
 ```
 **Note:** we also must have transaction manager configured. It could be either ``PseudoTransactionManager`` or any other.
 
+And we still no done yet. All this configuration is only for local filter. If we want to configure remote filter we must *hack* spring integration implementation of ``AbstractInboundFileSynchronizer`` to make it friendly to our implementation.
+
+## Extending Default Synchronizer
+
+As it usually happens when you want to customize Spring classes you need to read lot of source code, SO posts and forums. In our case we will write very simple extension for ``AbstractInboundFileSynchronizer`` and switch to Java configuration as most simple way to replace default implementation with the custom one.
+
+```java
+public class FtpExtendedInboundFileSynchronizer extends AbstractInboundFileSynchronizer<FTPFile> {
+
+    private CommitableFilter<FTPFile> commitableFilter;
+
+    ...
+
+    @Override
+    protected void copyFileToLocalDirectory(String remoteDirectoryPath, FTPFile remoteFile, File localDirectory,
+                                            Session<FTPFile> session) throws IOException {
+        super.copyFileToLocalDirectory(remoteDirectoryPath, remoteFile, localDirectory, session);
+        if (commitableFilter != null) {
+            commitableFilter.commit(remoteFile);
+        }
+    }
+
+    public void setCommitableFilter(CommitableFilter<FTPFile> commitableFilter) {
+        this.commitableFilter = commitableFilter;
+    }
+
+    ...
+}
+```
+And it becomes interesting when you need to configure it :)
+
+```java
+    @Bean
+    public AbstractInboundFileSynchronizer ftpInboundFileSynchronizer() {
+        FtpExtendedInboundFileSynchronizer fileSynchronizer = new FtpExtendedInboundFileSynchronizer(ftpSessionFactory());
+        fileSynchronizer.setDeleteRemoteFiles(deleteRemoteFiles);
+        fileSynchronizer.setRemoteDirectory(remoteDirectory);
+        **fileSynchronizer.setFilter(ftpRemoteCompositeFilter());**
+        **fileSynchronizer.setCommitableFilter(ftpPersistentFilter());**
+        return fileSynchronizer;
+    }
+
+    @Bean
+    @InboundChannelAdapter(channel = "ftpInbound", poller = @Poller("poller"))
+    public MessageSource<File> ftpMessageSource() {
+        FtpInboundFileSynchronizingMessageSource source =
+                new FtpInboundFileSynchronizingMessageSource(ftpInboundFileSynchronizer());
+        source.setLocalDirectory(new File(localProcessingDirectory));
+        source.setAutoCreateLocalDirectory(true);
+        source.setLocalFilter(ftpLocalCompositeFilter());
+        return source;
+    }
+```
+You can't use DSL and configuration via XML won't be trivial as well.
 
 ## Demo Application
+Sample project has simple integration flow: we download files from FTP, process them (fixed 10s for each) and then move files to directory with processed files:
+
+[Demo flow](https://www.lucidchart.com/publicSegments/view/f9b47b70-f747-4d5b-b618-ab43855a967c/image.png)
+
+We configure processing to run in parallel by setting executor property of a poller.
+To support Tx boundaries we use ``DirectChannel`` to ensure that all flow happens within single thread.
+
+## Next steps
 
 
 
@@ -260,7 +324,3 @@ We have configured our filter and it will store data about accepted files. Now w
 - file naming
 - rejected channel
 
-
-[si-ftp](http://docs.spring.io/spring-integration/reference/html/ftp.html)
-[si-files](http://docs.spring.io/spring-integration/reference/html/files.html)
-[si-ms](http://docs.spring.io/spring-integration/reference/html/system-management-chapter.html#metadata-store)
