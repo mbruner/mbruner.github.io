@@ -7,7 +7,7 @@ All sources could be found in my repo: https://github.com/mbruner/spring-integra
 Imagine a situation when you have FTP server or SAN/NAS (mounted to local system) where all your clients put their's files and you import them into you database.
 Sounds easy, right? Actually, it becomes a hard pain when you have distributed environment and you'd like to make your import process reliable.
 
-Situation that should be kept in mind while designing your solution:
+Things that should be kept in mind while designing your solution:
 
 - you may want to process your files concurrently
 - file download from FTP to local filesystem may fail
@@ -149,7 +149,7 @@ We decided to implement our own filter that will not just accept files but also 
 
 We store more information in metadata store then we need to serialize and deserialize some structure (e.g. JSON as in example):
 ```
-"ftpLocalAcceptOnceRetriableFilter-c.txt" ->"{\"status\":1,\"tries\":1,\"lastTryTimestamp\":1474975591}"
+"ftpLocalAcceptOnceRetriableFilter-c.txt" -> "{\"status\":1,\"tries\":1,\"lastTryTimestamp\":1474975591}"
 ```
 
 Implementation of ``accept(F file)`` method is trivial:
