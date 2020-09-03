@@ -4,7 +4,7 @@ All sources could be found in my repo: https://github.com/mbruner/spring-integra
 
 ## Problem description
 
-Imagine a situation when you have FTP server or SAN/NAS (mounted to local system) where all your clients put their's files and you import them into you database.
+Imagine a situation when you have FTP server or SAN/NAS (mounted to local system) where all your clients put their's files and you import them into your database.
 Sounds easy, right? Actually, it becomes a hard pain when you have distributed environment and you'd like to make your import process reliable.
 
 Things that should be kept in mind while designing your solution:
